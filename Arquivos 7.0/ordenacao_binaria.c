@@ -35,6 +35,11 @@ struct dadosI{
     long long byteoffset;
 };
 
+typedef struct listaDados{
+    int tamanho;
+    long long byteoffset;
+}listaDados;
+
 void mergeSort(indexDados** vetor, int inicio, int fim);
 void merge(indexDados** vetor, int inicio, int meio, int fim);
 
