@@ -27,5 +27,6 @@ Karl Cruz Altenhofen- 14585976
   bool ler_index(indexDados** IndiceLocal, int numero_indices, FILE* fpIndex);
   void criaJogador(regDados** jogador);
   void resolveindice(indexDados* indice, long long int localdainsercao, indexDados*** IndiceLocal, regCabecalho* CabecalhoLocal);
+  void excluir_registro(regDados* jogador, long long int byteoffset, FILE* fp, int *posicao, listaDados* RegistroLista);
   
 #endif

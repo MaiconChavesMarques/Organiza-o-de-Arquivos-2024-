@@ -566,3 +566,11 @@ void resolveindice(indexDados* indice, long long int localdainsercao, indexDados
     }
     (*IndiceLocal)[localinsercaoindice] = indice;
 }
+
+void excluir_registro(regDados* jogador, long long int byteoffset, FILE* fp, int *posicao, listaDados* RegistroLista){
+    fseek(fp, byteoffset, SEEK_SET); //Preciso escrever no registro como removido
+    fwrite(&jogador->removido, sizeof(char), 1, fp);
+    fwrite(&jogador->tamanhoRegistro, sizeof(int), 1, fp);
+    fwrite(&RegistroLista->byteoffset, sizeof(long long int), 1, fp);
+    (*posicao)=(*posicao)+1;
+}

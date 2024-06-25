@@ -147,7 +147,7 @@ int busca_binaria_insercao(indexDados** IndiceLocal, int idLocal, int inicio, in
 
 regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesquisa, long long int RegistrodeOffsets[], int function, indexDados** IndiceLocal, FILE *fp, int tamIndex, long long int *ByteSets, int tamanho_real){
 
-    long long Bytetemporario[*(numeroResultados)]; //Vou guardar temporariamente os byteoffsets dos selecionados;
+    long long Bytetemporario[*(numeroResultados)]; //Vou guardar temporariamente os byteoffsets daqueles que passarem no filtro;
     for(int i = 0; i < *(numeroResultados); i++){
         Bytetemporario[i] = -1;
     }
@@ -183,9 +183,9 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
         newNumero++;
     }else{ 
         if(pesquisa == 1){
-            BuscaNoRegistro(tamanho_real, fp, ByteSets, nomeCampo, &newNumero, Bytetemporario, newRegistro);
+            BuscaNoRegistro(tamanho_real, fp, ByteSets, nomeCampo, &newNumero, Bytetemporario, newRegistro); //Se é a primeira busca, tenho que buscar no disco
         }else{
-            BuscaNoVetor(nomeCampo, RegistroFiltrado, &newNumero, newRegistro, ByteSets, Bytetemporario, *numeroResultados, RegistrodeOffsets);
+            BuscaNoVetor(nomeCampo, RegistroFiltrado, &newNumero, newRegistro, ByteSets, Bytetemporario, *numeroResultados, RegistrodeOffsets); //Se estou utilizando o resultado filtrado, posso buscar no vetor que contem somente aqueles que passaram nos filtros
         }
     }
 
@@ -195,7 +195,7 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
             return NULL;
         }
     }
-    for(int i = 0; i < (*numeroResultados); i++){
+    for(int i = 0; i < (*numeroResultados); i++){ //Copio sobrescrevendo os byte sets antigos, isso permite que eu utilize a mesma variavel de indexação para os registros e bytesets
         RegistrodeOffsets[i]=Bytetemporario[i];
     }
     *numeroResultados = newNumero; //numeroResultados se torna o tamanho do novo registro
@@ -203,7 +203,7 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
 }
 
 void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeCampo, int* newNumero, long long int* Bytetemporario, regDados** newRegistro){
-    fseek(fp, 25, SEEK_SET);
+    fseek(fp, 25, SEEK_SET); //Pulo os bytes do cabeçalho
     int i = 0; //Indice que representa a quantidade de jogadores não removidos, lidos até o momento
     long long int Proxbyteoffset = 25; //Começo em 25 por considerar o tamanho do cabeçalho
 
@@ -213,7 +213,7 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
     char nacionalidadeLocal[30];
     char clubeLocal[30];
 
-    if(strcmp(nomeCampo, "id") == 0){
+    if(strcmp(nomeCampo, "id") == 0){ //Identifico qual campo é, e guardo sua respectiva variável
         scanf("%d", &idLocal);
     }else if(strcmp(nomeCampo, "idade") == 0){
         scanf("%d", &idadeLocal);
@@ -228,7 +228,7 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
     for(int a = 0; a < tamanho; a++){
         char teste_remocao;
         int tamRegLocal;
-        fread(&teste_remocao, sizeof(char), 1, fp); //Verifico se é um arquivo removido, para não inseri-lo no indice
+        fread(&teste_remocao, sizeof(char), 1, fp); //Verifico se é um arquivo removido, para não considera-lo
         fread(&tamRegLocal, sizeof(int), 1, fp);
         Proxbyteoffset+=tamRegLocal;
         if(teste_remocao == '1'){ //Se já estiver removido, vou para o próximo
@@ -242,9 +242,9 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
                 exit(1);
             }
             ByteSets[i] = Proxbyteoffset - tamRegLocal;
-            jogador->removido = teste_remocao; //Os valores dos campos continuam sendo lidos para posterior integração a funcionalidade da função 2
+            jogador->removido = teste_remocao;
             jogador->tamanhoRegistro = tamRegLocal;
-            pulaLixo = tamRegLocal;
+            pulaLixo = tamRegLocal; //Começa incialmente com o tamanho do registro, mas conforme vai sendo preenchida, vai sendo necessário ler menos caracteres indesejados
             fread(&jogador->Prox, sizeof(long long int), 1, fp);
             fread(&jogador->id, sizeof(int), 1, fp);
             fread(&jogador->idade, sizeof(int), 1, fp);
@@ -275,12 +275,12 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
             for(int j = 0; j < jogador->tamNomeClube; j++){ //Leio byte a byte os caracters
                 fread(&jogador->nomeClube[j], sizeof(char), 1, fp);
             }
-            pulaLixo=pulaLixo-jogador->tamNomeClube-4;
+            pulaLixo=pulaLixo-jogador->tamNomeClube-4; //
             for(int i = 0; i < pulaLixo; i++){
                 fread(&lixoCifrao, sizeof(char), 1, fp);
             }
 
-            if(strcmp(nomeCampo, "id") == 0){
+            if(strcmp(nomeCampo, "id") == 0){ //A partir desse momento tenho um jogador, com seus respectivos campos, mas ainda não sei se eles satisfaz a busca, então testo:
                     if(idLocal == jogador->id){
                         copiaJogador(newRegistro, jogador, *newNumero);
                         Bytetemporario[*newNumero] = ByteSets[i];
@@ -293,7 +293,7 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
                     }
             }else if(strcmp(nomeCampo, "idade") == 0){
                     if(idadeLocal == jogador->idade){
-                        copiaJogador(newRegistro, jogador, *newNumero);
+                        copiaJogador(newRegistro, jogador, *newNumero); //Se ele cumprir os requisitos, é movido ao vetor dos elementos filtrados
                         Bytetemporario[*newNumero] = ByteSets[i];
                         *newNumero=(*newNumero)+1;
                     }
@@ -331,7 +331,7 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
                         *newNumero=(*newNumero)+1;
                     }
             }
-            free(jogador->nomeJogador); //Libero a memória do jogador que mantive alocado
+            free(jogador->nomeJogador); //Libero a memória do jogador que mantive alocado para testa-lo
             free(jogador->nacionalidade);
             free(jogador->nomeClube);
             free(jogador);
@@ -342,12 +342,12 @@ void BuscaNoRegistro(int tamanho, FILE* fp, long long int* ByteSets, char* nomeC
 
 void BuscaNoVetor(char* nomeCampo, regDados** RegistroFiltrado, int* newNumero, regDados** newRegistro, long long int* ByteSets, long long int* Bytetemporario, int numeroResultados, long long int* RegistrodeOffsets){
     
-    if(strcmp(nomeCampo, "id") == 0){
+    if(strcmp(nomeCampo, "id") == 0){ //Busca dentro do vetor de registros já filtrados, observando o campo e o devido valor
         int idLocal;
         scanf("%d", &idLocal);
         for(int i = 0; i < numeroResultados; i++){
             if(idLocal == RegistroFiltrado[i]->id){
-                copiaJogador(newRegistro, RegistroFiltrado[i], *newNumero);
+                copiaJogador(newRegistro, RegistroFiltrado[i], *newNumero);  //Se ele cumprir os requisitos, é movido ao vetor dos elementos filtrados novamente
                 Bytetemporario[*newNumero] = RegistrodeOffsets[i];
                 *newNumero=(*newNumero)+1;
                 break; //se achar um id, encerra a busca

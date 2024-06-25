@@ -11,6 +11,7 @@ Karl Cruz Altenhofen- 14585976
 #include "leitura_escrita.h"
 #include "busca_impressao.h"
 #include "ordenacao_binaria.h"
+#include "fila.h"
 
 struct cab{
     char status;
@@ -43,6 +44,31 @@ struct listaDados{
     int tamanho;
     long long byteoffset;
 };
+
+typedef struct ArvBcab{
+    char status;
+    int noRaiz;
+    int proxRRN;
+    int nroChaves;
+}CabArvB;
+
+typedef struct ArvBdados{
+    int alturaNo;
+    int NroChaves;
+    int Chaves[3];
+    long long int ByteSets[3];
+    int ProxRRN[4];
+}NoArvB;
+
+void Driver_ArvB(indexDados ElementoArvB, CabArvB * CabecalhoArvB, FILE* fpArvB);
+void imprimirPaginadeDisco(NoArvB* PaginaArvB);
+void escrever_PaginaNoDisco(NoArvB* PaginaArvB, int RRN, FILE* fp);
+void imprimirPaginadeSplit(int Chaves[], long long int ByteSets[], int ProxRRN[]);
+void imprimirArvoreComFila(int RRN, FILE* fp);
+void ler_PaginaNoDisco(NoArvB* PaginaArvB, int RRN, FILE* fp);
+void split(NoArvB* PaginaArvB, NoArvB* NovaPaginaArvB, int ChavesSplit[], long long int ByteSetsSplit[], int ProxSplit[], int* id_promovido, long long int* ByteSetPromovido, int* paginaFilha, CabArvB * CabecalhoArvB);
+void insercao_ArvB(int NroPaginaAtual, int id_buscado, long long int ByteSetDoID, int* id_promovido, long long int* ByteSetPromovido, int* paginaFilha, int* promocao, CabArvB * CabecalhoArvB, FILE* fpArvB);
+bool constroi_arvoreB(int tamanho, FILE* fp, CabArvB * CabecalhoArvB, FILE* fpArvB); //Não trago nada para a memória primária, apenas crio o indice fazendo freads e fseek's
 
 void function1(){//Le os dados de um arquivo ".csv"  e escreve os dados em um arquivo ".bin"
     char arquivo1[30]; //Arquivo de entrada ".csv"
@@ -410,7 +436,6 @@ void function5(){ //Recebe um registro e escreve como logicamente removido no ar
         return;
     }
 
-    int DadosEmMemoria = 0;
     int tamMaxBuscado = 0; //é o maior tamanho que foi buscado até o momento, isso evitar trazer elementos novamente, trago elementos apenas por demanda
     int posicao = 0; //Diz respeito a qual a proxima posicao que irei gravar no vetor da lista ordenada, basicamente seu tamanho
     long long int byteinicial = CabecalhoLocal->topo; //Essa variavel diz a partir de qual byte eu já trouxe, para trazer estritamente apenas elementos novos, e só até o tamanho necessário, também é a flag de já trouxe todos
@@ -469,12 +494,8 @@ void function5(){ //Recebe um registro e escreve como logicamente removido no ar
                     RegistroLista->tamanho = newRegistro[j]->tamanhoRegistro; //Tamanho do registro deletado
                     RegistroLista->byteoffset = -1; //O proximo do registro deletado será -1;
                     listaOrdenada[0] = RegistroLista; //Recebo o elemento que irá compor a lista ordenada que está em RAM
-                    fseek(fp, RegistrodeOffsets[j], SEEK_SET); //Acesso ao registro de dados
-                    fwrite(&newRegistro[j]->removido, sizeof(char), 1, fp);
-                    fwrite(&newRegistro[j]->tamanhoRegistro, sizeof(int), 1, fp);
-                    fwrite(&RegistroLista->byteoffset, sizeof(long long int), 1, fp); //Atualizo o registro de dados
+                    excluir_registro(newRegistro[j], RegistrodeOffsets[j], fp, &posicao, RegistroLista);
                     CabecalhoLocal->topo = RegistrodeOffsets[j]; //O topo agora aponta para o byteoffset desse elemento
-                    posicao++;
                     byteinicial = -1; //Flag que indica que já trouxe todos os elementos possíveis da lista
                 }else if(newRegistro[j]->tamanhoRegistro < listaOrdenada[0]->tamanho){ //Caso em que já existe uma lista de removidos, mas quero adicionar um elemento na primeira posição da lista
                     for(int i = posicao-1; i >= 0; i--){ //Desloco todos os elementos da lista uma posição para frente
@@ -484,11 +505,7 @@ void function5(){ //Recebe um registro e escreve como logicamente removido no ar
                     RegistroLista->byteoffset = CabecalhoLocal->topo;
                     listaOrdenada[0] = RegistroLista; //Atualizo a lista própriamente
                     CabecalhoLocal->topo = RegistrodeOffsets[j]; //O topo irá apontar para esse elemento a partir de agora
-                    fseek(fp, RegistrodeOffsets[j], SEEK_SET); //Preciso escrever no registro como removido e manter a lista ordenada
-                    fwrite(&newRegistro[j]->removido, sizeof(char), 1, fp);
-                    fwrite(&newRegistro[j]->tamanhoRegistro, sizeof(int), 1, fp);
-                    fwrite(&RegistroLista->byteoffset, sizeof(long long int), 1, fp);
-                    posicao++;
+                    excluir_registro(newRegistro[j], RegistrodeOffsets[j], fp, &posicao, RegistroLista);
                 }else if(newRegistro[j]->tamanhoRegistro > listaOrdenada[posicao-1]->tamanho){ //Caso em que vou inserir um elemento no fim da lista, pois seu tamanho é maior que o de todos
                     RegistroLista->tamanho = newRegistro[j]->tamanhoRegistro; //Atualizo o elemento que será inserido na lista de removidos
                     RegistroLista->byteoffset = -1; //Como ele é o ultimo, seu byteoffset deve ser -1
@@ -500,11 +517,7 @@ void function5(){ //Recebe um registro e escreve como logicamente removido no ar
                         fseek(fp, (listaOrdenada[posicao-2]->byteoffset)+5, SEEK_SET); //se eu tiver mais de 1 elemento então basta acessar o byteoffset anterior para endereçar e escrever no registro de dados
                     }
                     fwrite(&RegistrodeOffsets[j], sizeof(long long int), 1, fp);
-                    fseek(fp, RegistrodeOffsets[j], SEEK_SET); //Preciso escrever no registro como removido e manter a lista ordenada
-                    fwrite(&newRegistro[j]->removido, sizeof(char), 1, fp);
-                    fwrite(&newRegistro[j]->tamanhoRegistro, sizeof(int), 1, fp);
-                    fwrite(&RegistroLista->byteoffset, sizeof(long long int), 1, fp);
-                    posicao++;
+                    excluir_registro(newRegistro[j], RegistrodeOffsets[j], fp, &posicao, RegistroLista);
                     byteinicial = -1;
                 }else{ //Caso de inserção em um lugar qualquer no meio da lista
                     int indice = busca_anterior(listaOrdenada, posicao, newRegistro[j]->tamanhoRegistro); //Procuro o indice do elemento que vem logo antes do elemento que de fato eu quero inserir
@@ -517,15 +530,11 @@ void function5(){ //Recebe um registro e escreve como logicamente removido no ar
                     }
                     fwrite(&RegistrodeOffsets[j], sizeof(long long int), 1, fp);
                     listaOrdenada[indice]->byteoffset = RegistrodeOffsets[j];  //Atualizo o elemento que será inserido na lista de removidos
-                    fseek(fp, RegistrodeOffsets[j], SEEK_SET); //Preciso escrever no registro como removido e manter a lista ordenada
-                    fwrite(&newRegistro[j]->removido, sizeof(char), 1, fp);
-                    fwrite(&newRegistro[j]->tamanhoRegistro, sizeof(int), 1, fp);
-                    fwrite(&RegistroLista->byteoffset, sizeof(long long int), 1, fp);
-                    for(int i = posicao-1; i >= indice+1; i--){ //Posição-1 porque é um vetor, e os elemento sempre começam em zero
+                    excluir_registro(newRegistro[j], RegistrodeOffsets[j], fp, &posicao, RegistroLista);
+                    for(int i = posicao-2; i >= indice+1; i--){ //Posição-1 porque é um vetor, e os elemento sempre começam em zero
                         listaOrdenada[i+1]=listaOrdenada[i];
                     }
                     listaOrdenada[indice+1] = RegistroLista;
-                    posicao++;
                     }
                     remover_arquivo_indice(IndiceLocal, CabecalhoLocal->nroRegArq+1, newRegistro[j]); //Removo o arquivo do indice e desloco os elementos que for necessário
                     IndiceLocal = (indexDados**) realloc (IndiceLocal,(CabecalhoLocal->nroRegArq)*sizeof(indexDados*)); //Readequo o tamanho do indice local
@@ -688,7 +697,6 @@ void function6(){ //deleta um registro
                 for(int i = 0; i < tamanhobuscando - tamanhoReal; i++){
                     fwrite(&nullchar, sizeof(char), 1, fp); // escreve '$' nos espacos que sobraram
                 }
-
                 resolveindice(indice, localdainsercao, &IndiceLocal, CabecalhoLocal); // realoca e insere ordenadamente o novo indice no indiceLocal
             }else{ // algum outro elemento da lista ordenada de registros excluidos sera sobreescrito
                 long long int byteoffsetdainsercao = listaOrdenada[posicaodeinsercao-1]->byteoffset; // salva byteoffset da insercao para escrever no indice
@@ -753,6 +761,554 @@ void function6(){ //deleta um registro
     binarioNaTela(arquivo2);
 }
 
+void function7(){ //Le os dados de um arquivo ".bin"  e cria um arquivo de indice para esse binário lido
+    char arquivo1[30]; //Arquivo de entrada ".bin"
+    scanf("%s", arquivo1);
+    char arquivo2[30]; //Arquivo de saida indice ".bin"
+    scanf("%s", arquivo2);
+    FILE *fp; //Ponteiro para o controle do arquivo de dados
+    FILE *fpArvB; //Ponteiro para o controle do indice
+    if (((fp = fopen(arquivo1, "rb+"))) == NULL){ //Abro o binário para leitura
+        printf("Falha no processamento do arquivo.");
+        return;
+    }
+    
+    regCabecalho* CabecalhoLocal;
+    if((CabecalhoLocal = (regCabecalho*) malloc (sizeof(regCabecalho))) == NULL){ //Aloco o cabecalho
+        printf("Falha no processamento do arquivo.");
+        fclose(fp);
+        return;
+    }
+
+    fread(&CabecalhoLocal->status, sizeof(char), 1, fp); //Leio as informações do cabecalho
+    fread(&CabecalhoLocal->topo, sizeof(long long int), 1, fp);
+    fread(&CabecalhoLocal->proxByteOffset, sizeof(long long int), 1, fp);
+    fread(&CabecalhoLocal->nroRegArq, sizeof(int), 1, fp);
+    fread(&CabecalhoLocal->nroRegRem, sizeof(int), 1, fp);
+    
+    if(CabecalhoLocal->status == '0'){ //Checo se há algum erro no meu arquivo de dados.
+        printf("Falha no processamento do arquivo.");
+        return;
+    }
+
+    if(CabecalhoLocal->nroRegArq == 0){ //Checo se existem registros no meu arquivo de dados.
+        printf("Registro inexistente.\n\n");
+        return;
+    }
+
+    int tamanho_real = CabecalhoLocal->nroRegArq+CabecalhoLocal->nroRegRem; //O tamanho que preciso realmente buscar são os ativos + os removidos
+ 
+    CabArvB * CabecalhoArvB;
+    CabecalhoArvB = (CabArvB*) malloc (sizeof(CabArvB));
+    if(CabecalhoArvB == NULL){
+        exit(1);
+    }
+
+    if (((fpArvB = fopen(arquivo2, "wb+"))) == NULL){ //Abro o binário para leitura
+        printf("Falha no processamento do arquivo.");
+        return;
+    }
+
+    CabecalhoArvB->status = '0';
+    fwrite(&CabecalhoArvB, sizeof(char), 1, fpArvB);
+    CabecalhoArvB->noRaiz = -1;
+    CabecalhoArvB->proxRRN = 0;
+    CabecalhoArvB->nroChaves = 0;
+
+    constroi_arvoreB(tamanho_real, fp, CabecalhoArvB, fpArvB); //Construo meu indice
+    fclose(fp);
+
+    CabecalhoArvB->status = '1';
+    fseek(fpArvB, 0, SEEK_SET);
+    fwrite(&CabecalhoArvB, sizeof(char), 1, fpArvB);
+
+    fclose(fpArvB);
+    free(CabecalhoArvB);
+    free(CabecalhoLocal);
+    binarioNaTela(arquivo2);
+}
+
+bool constroi_arvoreB(int tamanho, FILE* fp, CabArvB * CabecalhoArvB, FILE* fpArvB){ //Não trago nada para a memória primária, apenas crio o indice fazendo freads e fseek's
+    int i = 0; //Indice que representa a quantidade de jogadores não removidos, lidos até o momento
+    long long int Proxbyteoffset = 25; //Começo em 25 por considerar o tamanho do cabeçalho
+    for(int a = 0; a < tamanho; a++){
+        char teste_remocao;
+        int tamRegLocal;
+        fread(&teste_remocao, sizeof(char), 1, fp); //Verifico se é um arquivo removido, para não inseri-lo no indice
+        fread(&tamRegLocal, sizeof(int), 1, fp);
+        Proxbyteoffset+=tamRegLocal;
+        if(teste_remocao == '1'){ //Se já estiver removido, vou para o próximo
+            fseek(fp, tamRegLocal-5, SEEK_CUR);
+        }else{
+            int pulaLixo; //Quantos bytes precisso avançar lendo lixo
+            char lixoCifrao; //Variavel descartável que recebe lixo
+            regDados* jogador;
+            indexDados* indice;
+            if((jogador = (regDados*) malloc (sizeof(regDados))) == NULL){ //Aloco espaço para o jogador
+                printf("Falha no processamento do arquivo.61\n");
+                return false;
+            }
+            indexDados ElementoArvB;
+            ElementoArvB.byteoffset = Proxbyteoffset - tamRegLocal;
+            jogador->removido = teste_remocao; //Os valores dos campos continuam sendo lidos para posterior integração a funcionalidade da função 2
+            jogador->tamanhoRegistro = tamRegLocal;
+            pulaLixo = tamRegLocal;
+            fread(&jogador->Prox, sizeof(long long int), 1, fp);
+            fread(&jogador->id, sizeof(int), 1, fp);
+            ElementoArvB.id = jogador->id;
+            fread(&jogador->idade, sizeof(int), 1, fp);
+            fread(&jogador->tamNomeJog, sizeof(int), 1, fp);
+            pulaLixo -= 25;
+            if((jogador->nomeJogador = (char*) malloc ((jogador->tamNomeJog)*sizeof(char))) == NULL){ 
+                printf("Falha no processamento do arquivo.\n");
+                return false;
+            }
+            for(int j = 0; j < jogador->tamNomeJog; j++){ //Leio byte a byte os caracters
+                fread(&jogador->nomeJogador[j], sizeof(char), 1, fp);
+            }
+            pulaLixo=pulaLixo-jogador->tamNomeJog;
+            fread(&jogador->tamNacionalidade, sizeof(int), 1, fp);
+            if((jogador->nacionalidade = (char*) malloc ((jogador->tamNacionalidade)*sizeof(char))) == NULL){ 
+                printf("Falha no processamento do arquivo.\n");
+                return false;
+            }
+            for(int j = 0; j < jogador->tamNacionalidade; j++){ //Leio byte a byte os caracters
+            fread(&jogador->nacionalidade[j], sizeof(char), 1, fp); 
+            }
+            pulaLixo= pulaLixo-jogador->tamNacionalidade-4;
+            fread(&jogador->tamNomeClube, sizeof(int), 1, fp);
+            if((jogador->nomeClube = (char*) malloc ((jogador->tamNomeClube)*sizeof(char))) == NULL){
+                printf("Falha no processamento do arquivo.\n");
+                return false;
+            }
+            for(int j = 0; j < jogador->tamNomeClube; j++){ //Leio byte a byte os caracters
+                fread(&jogador->nomeClube[j], sizeof(char), 1, fp);
+            }
+            pulaLixo=pulaLixo-jogador->tamNomeClube-4;
+            for(int i = 0; i < pulaLixo; i++){
+                fread(&lixoCifrao, sizeof(char), 1, fp);
+            }
+            free(jogador->nomeJogador); //Libero a memória do jogador que mantive alocado
+            free(jogador->nacionalidade);
+            free(jogador->nomeClube);
+            free(jogador);
+            i++;
+            Driver_ArvB(ElementoArvB, CabecalhoArvB, fpArvB);
+            imprimirArvoreComFila(CabecalhoArvB->noRaiz, fpArvB);
+            printf("Out\n");
+        }
+    }
+
+    return true;
+}
+
+void insercao_ArvB(int NroPaginaAtual, int id_buscado, long long int ByteSetDoID, int* id_promovido, long long int* ByteSetPromovido, int* paginaFilha, int* promocao, CabArvB * CabecalhoArvB, FILE* fpArvB){
+    //NroPaginaAtual = RRN da pagina que estou trazendo no momento; ByteSetdoID = Byteoffset do elemento novo que estou inserindo na arvore, id*_promovido = valor do id, do elemento que está sendo promovido
+    //paginaFilha = Pagina a direita, do elemento que está sendo promovido, equivalente a novaPagina.
+    if(NroPaginaAtual == -1){
+        *id_promovido = id_buscado;
+        *ByteSetPromovido = ByteSetDoID;
+        *paginaFilha = -1;
+        *promocao = 1;
+        printf("Retornando split como 1, fim da recursão interna\n");
+        return;
+    }else{
+        //falta atualizar o numero de chaves em cada iteraçao
+        long long int RRN_atual = (NroPaginaAtual*60);
+        //fseek(fpArvB, RRN_atual, SEEK_SET);
+        NoArvB* PaginaArvB;
+        PaginaArvB = (NoArvB*) malloc (sizeof(NoArvB));
+        if(PaginaArvB == NULL){
+            exit(1);
+        }
+        printf("O numero da pagina atual eh:%d\n", NroPaginaAtual);
+        ler_PaginaNoDisco(PaginaArvB, NroPaginaAtual, fpArvB);
+        //imprimirPaginadeDisco(PaginaArvB);
+        printf("O id buscado eh:%d\n", id_buscado);
+        int posicao = 0;
+        for(int i = 0; i < PaginaArvB->NroChaves; i++){
+            if(PaginaArvB->Chaves[i]>id_buscado){
+                break;
+            }
+            posicao++;
+        }
+        printf("A posição que devo inserir claramente eh: %d\n", posicao);
+        if(posicao < 3){ //Caso em que todos os nós da minha pagina são menores, ai não posso checar a posicão para testar se encontrei o nó
+            if(PaginaArvB->Chaves[posicao] == id_buscado){
+                *promocao = -1;
+                return;
+            }
+        }
+        printf("O proximo RRN na posicao eh: %d\n", PaginaArvB->ProxRRN[posicao]);
+        //exit(1); /////////////////////////
+        insercao_ArvB(PaginaArvB->ProxRRN[posicao], id_buscado, ByteSetDoID, id_promovido, ByteSetPromovido, paginaFilha, promocao, CabecalhoArvB, fpArvB);
+        if(*promocao == 0){
+            return;
+        }else if(*promocao == 1 && (PaginaArvB->NroChaves < 3)){
+                    printf("Não precisei fazer split\n");
+            posicao = 0; //Não sei se vou inserir um elemento diferente do elemento que foi buscado inicalmente
+            for(int i = 0; i < PaginaArvB->NroChaves; i++){
+                if(PaginaArvB->Chaves[i]>*id_promovido){
+                    break;
+                }
+                posicao++;
+            }
+            imprimirPaginadeDisco(PaginaArvB);
+            printf("O numero de chaves eh: %d\n", PaginaArvB->NroChaves);
+            printf("A posição que devo inserir claramente eh: %d\n", posicao);
+            for(int i = 1; i >= posicao; i--){
+                PaginaArvB->Chaves[i+1]=PaginaArvB->Chaves[i];
+                PaginaArvB->ByteSets[i+1]=PaginaArvB->ByteSets[i];
+                PaginaArvB->ProxRRN[i+2] = PaginaArvB->ProxRRN[i+1];
+            }
+            PaginaArvB->Chaves[posicao] = *id_promovido;
+            PaginaArvB->ByteSets[posicao]= *ByteSetPromovido;
+            PaginaArvB->ProxRRN[posicao+1] = *paginaFilha;
+            PaginaArvB->NroChaves++;
+            *promocao = 0;
+            imprimirPaginadeDisco(PaginaArvB);
+            escrever_PaginaNoDisco(PaginaArvB, NroPaginaAtual, fpArvB);
+        }else{
+            printf("Fiz split\n");
+            //imprimirPaginadeDisco(PaginaArvB);
+            int ChavesSplit[4] = {-1, -1, -1, -1};
+            long long int ByteSetsSplit[4] = {-1, -1, -1, -1};
+            int ProxSplit[5] = {-1, -1, -1, -1, -1};
+            for(int i = 0; i < PaginaArvB->NroChaves; i++){
+                ChavesSplit[i] = PaginaArvB->Chaves[i];
+                ByteSetsSplit[i] = PaginaArvB->ByteSets[i];
+                ProxSplit[i] = PaginaArvB->ProxRRN[i];
+            }
+            for(int i = 0; i < 5; i++){
+                //printf("Chaves split %d\n", ProxSplit[i]);
+            }
+            for(int i = 0; i < PaginaArvB->NroChaves; i++){
+                if(PaginaArvB->Chaves[i]>*id_promovido){
+                    break;
+                }
+                posicao++;
+            }
+            printf("A posicao do novo elemento deveria ser %d\n", posicao);
+            for(int i = 2; i >= posicao; i--){
+                ChavesSplit[i+1]=ChavesSplit[i];
+                ByteSetsSplit[i+1]=ByteSetsSplit[i];
+                ProxSplit[i+2] = ProxSplit[i+1];
+            }
+            for(int i = 0; i < 3; i++){
+                //printf("Chaves split %d\n", ChavesSplit[i]);
+            }
+            ChavesSplit[posicao] = *id_promovido;
+            ByteSetsSplit[posicao] = *ByteSetPromovido;
+            ProxSplit[posicao+1] = *paginaFilha;
+            NoArvB* NovaPaginaArvB;
+            NovaPaginaArvB = (NoArvB*) malloc (sizeof(NoArvB));
+            if(NovaPaginaArvB == NULL){
+                exit(1);
+            }
+            NovaPaginaArvB->NroChaves = 2;
+            NovaPaginaArvB->alturaNo = PaginaArvB->alturaNo;
+
+            for(int i = 0; i < 5; i++){
+                //printf("Chaves split %d\n", ProxSplit[i]);
+            }
+            imprimirPaginadeSplit(ChavesSplit, ByteSetsSplit, ProxSplit);
+            split(PaginaArvB, NovaPaginaArvB, ChavesSplit, ByteSetsSplit, ProxSplit, id_promovido, ByteSetPromovido, paginaFilha, CabecalhoArvB);
+            PaginaArvB->NroChaves = 1;
+            printf("A pagina antiga: \n");
+            imprimirPaginadeDisco(PaginaArvB);
+            printf("A pagina nova: \n");
+            imprimirPaginadeDisco(NovaPaginaArvB);
+            escrever_PaginaNoDisco(PaginaArvB, NroPaginaAtual, fpArvB);
+            escrever_PaginaNoDisco(NovaPaginaArvB, CabecalhoArvB->proxRRN, fpArvB);
+            *promocao = 1;
+            CabecalhoArvB->proxRRN++;
+            free(NovaPaginaArvB);
+        }
+        free(PaginaArvB);
+    }
+}
+
+void split(NoArvB* PaginaArvB, NoArvB* NovaPaginaArvB, int ChavesSplit[], long long int ByteSetsSplit[], int ProxSplit[], int* id_promovido, long long int* ByteSetPromovido, int* paginaFilha, CabArvB * CabecalhoArvB){
+    int posicao_split = 1;
+    for(int i = 0; i < PaginaArvB->NroChaves; i++){
+        PaginaArvB->Chaves[i] = -1;
+        PaginaArvB->ByteSets[i] = -1;
+    }
+    for(int i = 0; i < PaginaArvB->NroChaves+1; i++){
+        PaginaArvB->ProxRRN[i] = -1;
+    }
+    for(int i = 0; i < 3; i++){
+        NovaPaginaArvB->Chaves[i] = -1;
+        NovaPaginaArvB->ByteSets[i] = -1;
+    }
+    for(int i = 0; i < 4; i++){
+        NovaPaginaArvB->ProxRRN[i] = -1;
+    }
+    for(int i = 0; i < posicao_split; i ++){
+        PaginaArvB->Chaves[i] = ChavesSplit[i];
+        PaginaArvB->ByteSets[i] = ByteSetsSplit[i];
+        PaginaArvB->ProxRRN[i] = ProxSplit[i];
+    }
+    PaginaArvB->ProxRRN[1] = ProxSplit[posicao_split];
+    *id_promovido = ChavesSplit [posicao_split];
+    *ByteSetPromovido = ByteSetsSplit [posicao_split];
+    *paginaFilha = CabecalhoArvB->proxRRN;
+    int j = posicao_split+1;
+    int i = 0;
+    for(int i = 0; i < 4; i++){
+        //printf("Chaves split %d\n", ChavesSplit[i]);
+    }
+    while(i < NovaPaginaArvB->NroChaves){
+        NovaPaginaArvB->Chaves[i] = ChavesSplit[j];
+        NovaPaginaArvB->ByteSets[i] = ByteSetsSplit[j];
+        NovaPaginaArvB->ProxRRN[i] = ProxSplit[j];
+        j++;
+        i++;
+    }
+    //printf("Aq %d\n", NovaPaginaArvB->Chaves[1]);
+    //printf("i: %d\n", i);
+    NovaPaginaArvB->ProxRRN[i] = ProxSplit[j];
+    //imprimirPaginadeDisco(NovaPaginaArvB);
+}
+
+void ler_PaginaNoDisco(NoArvB* PaginaArvB, int RRN, FILE* fp){
+    printf("ler_pagina_De\n");
+    printf("O RRN de leitura eh: %d\n", RRN);
+    fseek(fp, (RRN*60)+60, SEEK_SET);
+    fread(&PaginaArvB->alturaNo, sizeof(int), 1, fp);
+    fread(&PaginaArvB->NroChaves, sizeof(int), 1, fp); 
+    fread(&PaginaArvB->Chaves[0], sizeof(int), 1, fp); 
+    fread(&PaginaArvB->ByteSets[0], sizeof(long long int), 1, fp); 
+    fread(&PaginaArvB->Chaves[1], sizeof(int), 1, fp); 
+    fread(&PaginaArvB->ByteSets[1], sizeof(long long int), 1, fp); 
+    fread(&PaginaArvB->Chaves[2], sizeof(int), 1, fp); 
+    fread(&PaginaArvB->ByteSets[2], sizeof(long long int), 1, fp); 
+    fread(&PaginaArvB->ProxRRN[0], sizeof(int), 1, fp); 
+    fread(&PaginaArvB->ProxRRN[1], sizeof(int), 1, fp); 
+    fread(&PaginaArvB->ProxRRN[2], sizeof(int), 1, fp); 
+    fread(&PaginaArvB->ProxRRN[3], sizeof(int), 1, fp);
+    //imprimirPaginadeDisco(PaginaArvB);
+}
+
+void escrever_PaginaNoDisco(NoArvB* PaginaArvB, int RRN, FILE* fp){
+    fseek(fp, (RRN*60)+60, SEEK_SET);
+    fwrite(&PaginaArvB->alturaNo, sizeof(int), 1, fp);
+    fwrite(&PaginaArvB->NroChaves, sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->Chaves[0], sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->ByteSets[0], sizeof(long long int), 1, fp); 
+    fwrite(&PaginaArvB->Chaves[1], sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->ByteSets[1], sizeof(long long int), 1, fp); 
+    fwrite(&PaginaArvB->Chaves[2], sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->ByteSets[2], sizeof(long long int), 1, fp); 
+    fwrite(&PaginaArvB->ProxRRN[0], sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->ProxRRN[1], sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->ProxRRN[2], sizeof(int), 1, fp); 
+    fwrite(&PaginaArvB->ProxRRN[3], sizeof(int), 1, fp);
+    fflush(fp);
+}
+
+void Driver_ArvB(indexDados ElementoArvB, CabArvB * CabecalhoArvB, FILE* fpArvB){
+    int id_promovido = -1;
+    long long int ByteSetPromovido = -1;
+    int paginaFilha = -1;
+    int promocao = 0;
+    //Sobre a promocao
+    // Quando -1 significa ERRO
+    // Quando 0 significa SEM PROMOCAO
+    // Quando 1 significa COM PROMOCAO
+    if(CabecalhoArvB->nroChaves == 0){
+        CabecalhoArvB->noRaiz = 0;
+        CabecalhoArvB->nroChaves = 1;
+        CabecalhoArvB->proxRRN = 1;
+        NoArvB* PaginaArvB;
+        PaginaArvB = (NoArvB*) malloc (sizeof(NoArvB));
+        if(PaginaArvB == NULL){
+            exit(1);
+        }
+        PaginaArvB->alturaNo = 0;
+        PaginaArvB->NroChaves = 1;
+        for(int i = 0; i < 3; i++){
+            PaginaArvB->Chaves[i] = -1;
+            PaginaArvB->ByteSets[i] = -1;
+        }
+        for(int i = 0; i < 4; i++){
+            PaginaArvB->ProxRRN[i] = -1;
+        }
+        PaginaArvB->Chaves[0] = ElementoArvB.id;
+        PaginaArvB->ByteSets[0] = ElementoArvB.byteoffset;
+        //imprimirPaginadeDisco(PaginaArvB);
+        //exit(1);
+        escrever_PaginaNoDisco(PaginaArvB, 0, fpArvB);
+        printf("Inseri no começo");
+        free(PaginaArvB);
+        //ler_PaginaNoDisco(PaginaArvB, 0, fpArvB);
+        //imprimirPaginadeDisco(PaginaArvB);
+    }else{
+        printf("Se não\n");
+        insercao_ArvB(CabecalhoArvB->noRaiz, ElementoArvB.id, ElementoArvB.byteoffset, &id_promovido, &ByteSetPromovido, &paginaFilha, &promocao, CabecalhoArvB, fpArvB);
+            if(promocao == 1){
+            printf("Fiz split na RAIZZZ\n");
+            //exit(1); /////////////////////////
+            NoArvB* PaginaArvB;
+            PaginaArvB = (NoArvB*) malloc (sizeof(NoArvB));
+            NoArvB* RaizArvB;
+            RaizArvB = (NoArvB*) malloc (sizeof(NoArvB));
+            if(PaginaArvB == NULL){
+                exit(1);
+            }
+            if(RaizArvB == NULL){
+                exit(1);
+            }
+            ler_PaginaNoDisco(RaizArvB, CabecalhoArvB->noRaiz, fpArvB);
+            PaginaArvB->alturaNo = RaizArvB->alturaNo+1;
+            PaginaArvB->NroChaves = 1;
+            for(int i = 0; i < 3; i++){
+                PaginaArvB->Chaves[i] = -1;
+                PaginaArvB->ByteSets[i] = -1;
+            }
+            for(int i = 0; i < 4; i++){
+                PaginaArvB->ProxRRN[i] = -1;
+            }
+            PaginaArvB->Chaves[0] = id_promovido;
+            PaginaArvB->ByteSets[0] = ByteSetPromovido;
+            PaginaArvB->ProxRRN[0] = CabecalhoArvB->noRaiz;
+            PaginaArvB->ProxRRN[1] = paginaFilha;
+            CabecalhoArvB->noRaiz = CabecalhoArvB->proxRRN;
+            CabecalhoArvB->proxRRN++;
+            printf("O novo nó raiz estará em %d\n", CabecalhoArvB->noRaiz);
+            escrever_PaginaNoDisco(PaginaArvB, CabecalhoArvB->noRaiz, fpArvB);
+            imprimirPaginadeDisco(PaginaArvB);
+            free(PaginaArvB);
+            free(RaizArvB);
+        }  
+    }
+}
+
+void imprimirPaginadeDisco(NoArvB* PaginaArvB){
+    printf("AlturaNo: %d\n", PaginaArvB->alturaNo);
+    printf("NroChaves: %d\n", PaginaArvB->NroChaves);
+    printf("C1 %d\n", PaginaArvB->Chaves[0]);
+    printf("PR1 %lld\n", PaginaArvB->ByteSets[0]);
+    printf("C2 %d\n", PaginaArvB->Chaves[1]);
+    printf("PR2 %lld\n", PaginaArvB->ByteSets[1]);
+    printf("C3 %d\n", PaginaArvB->Chaves[2]);
+    printf("PR3 %lld\n", PaginaArvB->ByteSets[2]);
+    for(int i = 0; i < 4; i++){
+        printf("P%d %d ", i+1, PaginaArvB->ProxRRN[i]);
+    }
+    printf("\n\n");
+}
+
+void imprimirPaginadeSplit(int Chaves[], long long int ByteSets[], int ProxRRN[]){
+    printf("C1 %d\n", Chaves[0]);
+    printf("PR1 %lld\n", ByteSets[0]);
+    printf("C2 %d\n", Chaves[1]);
+    printf("PR2 %lld\n", ByteSets[1]);
+    printf("C3 %d\n", Chaves[2]);
+    printf("PR3 %lld\n", ByteSets[2]);
+    printf("C4 %d\n", Chaves[3]);
+    printf("PR4 %lld\n", ByteSets[3]);
+    for(int i = 0; i < 5; i++){
+        printf("P%d %d ", i+1, ProxRRN[i]);
+    }
+    printf("\n\n");
+}
+
+void imprimirArvoreComFila(int RRN, FILE* fp){
+    printf("\n\n\nImpressão da arvoreB\n");
+    NoArvB* PaginaArvB = (NoArvB*) malloc (sizeof(NoArvB));
+    ler_PaginaNoDisco(PaginaArvB, RRN, fp);
+    imprimirPaginadeDisco(PaginaArvB);
+    FILA* fila = fila_criar();
+    ITEM* meuitem;
+    for(int i = 0; i < 4; i++){
+        if(PaginaArvB->ProxRRN[i] != -1){
+            meuitem = item_criar(PaginaArvB->ProxRRN[i]);
+            if(fila_inserir(fila, meuitem)){
+                printf("Coloquei: %d\n", PaginaArvB->ProxRRN[i]);
+            }
+        }
+    }
+    if(fila_vazia(fila)){
+        printf("Esta vazia\n");
+    }
+    while(!fila_vazia(fila)){
+        int proximo = item_get_chave(fila_remover(fila));
+        printf("tirei: %d\n", proximo);
+        ler_PaginaNoDisco(PaginaArvB, proximo, fp);
+        imprimirPaginadeDisco(PaginaArvB);
+        for(int i = 0; i < 4; i++){
+            if(PaginaArvB->ProxRRN[i] != -1){
+                meuitem = item_criar(PaginaArvB->ProxRRN[i]);
+                fila_inserir(fila, meuitem);
+                printf("Coloquei: %d\n", PaginaArvB->ProxRRN[i]);
+            }
+        }
+    }
+    printf("\n\n\n");
+}
+
+void function8(){ //Le os dados de um arquivo ".bin"  e cria um arquivo de indice para esse binário lido
+    char arquivo1[30]; //Arquivo de entrada ".bin"
+    scanf("%s", arquivo1);
+    char arquivo2[30]; //Arquivo de saida indice ".bin"
+    scanf("%s", arquivo2);
+    FILE *fp; //Ponteiro para o controle do arquivo de dados
+    FILE *fpArvB; //Ponteiro para o controle do indice
+    if (((fp = fopen(arquivo1, "rb+"))) == NULL){ //Abro o binário para leitura
+        printf("Falha no processamento do arquivo.");
+        return;
+    }
+    
+    regCabecalho* CabecalhoLocal;
+    if((CabecalhoLocal = (regCabecalho*) malloc (sizeof(regCabecalho))) == NULL){ //Aloco o cabecalho
+        printf("Falha no processamento do arquivo.");
+        fclose(fp);
+        return;
+    }
+
+    fread(&CabecalhoLocal->status, sizeof(char), 1, fp); //Leio as informações do cabecalho
+    fread(&CabecalhoLocal->topo, sizeof(long long int), 1, fp);
+    fread(&CabecalhoLocal->proxByteOffset, sizeof(long long int), 1, fp);
+    fread(&CabecalhoLocal->nroRegArq, sizeof(int), 1, fp);
+    fread(&CabecalhoLocal->nroRegRem, sizeof(int), 1, fp);
+    
+    if(CabecalhoLocal->status == '0'){ //Checo se há algum erro no meu arquivo de dados.
+        printf("Falha no processamento do arquivo.");
+        return;
+    }
+
+    if(CabecalhoLocal->nroRegArq == 0){ //Checo se existem registros no meu arquivo de dados.
+        printf("Registro inexistente.\n\n");
+        return;
+    }
+
+    int tamanho_real = CabecalhoLocal->nroRegArq+CabecalhoLocal->nroRegRem; //O tamanho que preciso realmente buscar são os ativos + os removidos
+ 
+    CabArvB * CabecalhoArvB;
+    CabecalhoArvB = (CabArvB*) malloc (sizeof(CabArvB));
+    if(CabecalhoArvB == NULL){
+        exit(1);
+    }
+
+    if (((fpArvB = fopen(arquivo2, "rb+"))) == NULL){ //Abro o binário para leitura
+        printf("Falha no processamento do arquivo.");
+        return;
+    }
+
+    char status;
+    int noRaiz;
+    int proxRRN;
+    int nroChaves;
+
+    fread(&status, sizeof(char), 1, fpArvB);
+    fread(&noRaiz, sizeof(int), 1, fpArvB);
+    fread(&proxRRN, sizeof(int), 1, fpArvB);
+    fread(&nroChaves, sizeof(int), 1, fpArvB);
+    printf("No raiz: %d\n", noRaiz);
+    imprimirArvoreComFila(noRaiz, fpArvB);
+}
+
 int main(){ 
     int operacao; //Operação que será feita pelo usuário
     scanf("%d", &operacao);
@@ -777,7 +1333,16 @@ int main(){
         function6();
         break;
     case 7:
-        //function7();
+        function7();
+        break;
+    case 8:
+        function8();
+        break;
+    case 9:
+        //function9();
+        break;
+    case 10:
+        //function10();
         break;
     default:
         break;
