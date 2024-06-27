@@ -72,14 +72,14 @@ void ler_dados(regCabecalho* CabecalhoLocal, regDados*** RegistrosLocais, FILE* 
         (CabecalhoLocal->nroRegArq)++;
         if(((CabecalhoLocal->nroRegArq) % 100)==0){ //Uso realloc de jogadores sempre de 100 em 100
             if(((*RegistrosLocais) = (regDados**) realloc ((*RegistrosLocais), ((CabecalhoLocal->nroRegArq)+100)*sizeof(regDados*))) == NULL){
-                printf("Falha no processamento do arquivo.");
+                printf("Falha no processamento do arquivo.\n");
                 fclose(fp);
                 return;
             }
         }
         regDados* jogador;
         if((jogador = (regDados*) malloc (sizeof(regDados))) == NULL){
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             fclose(fp);
             return;
         }
@@ -100,7 +100,7 @@ void ler_dados(regCabecalho* CabecalhoLocal, regDados*** RegistrosLocais, FILE* 
         }
         jogador->tamNomeJog = count-1; //Para desconsiderar a vírgula que veio
         if((jogador->nomeJogador = (char*) malloc ((jogador->tamNomeJog)*sizeof(char))) == NULL){
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             fclose(fp);
             return;
         }
@@ -119,7 +119,7 @@ void ler_dados(regCabecalho* CabecalhoLocal, regDados*** RegistrosLocais, FILE* 
         }
         jogador->tamNacionalidade = count-1; //Para desconsiderar a vírgula que veio
         if((jogador->nacionalidade = (char*) malloc ((jogador->tamNacionalidade)*sizeof(char))) == NULL){
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             fclose(fp);
             return;
         }
@@ -138,7 +138,7 @@ void ler_dados(regCabecalho* CabecalhoLocal, regDados*** RegistrosLocais, FILE* 
         }
         jogador->tamNomeClube = count-1; //Para desconsiderar o "/n" que veio da função fgets
         if((jogador->nomeClube = (char*) malloc ((jogador->tamNomeClube)*sizeof(char))) == NULL){ 
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             fclose(fp);
             return;
         }
@@ -160,7 +160,7 @@ regDados* ler_jogador(long long int byteoffset, FILE* fp){ //Faz a leitura de ex
     regDados* jogador;
     fseek(fp, byteoffset, SEEK_SET);
     if((jogador = (regDados*) malloc (sizeof(regDados))) == NULL){
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         fclose(fp);
         exit(1);
     }
@@ -171,7 +171,7 @@ regDados* ler_jogador(long long int byteoffset, FILE* fp){ //Faz a leitura de ex
     fread(&jogador->idade, sizeof(int), 1, fp);
     fread(&jogador->tamNomeJog, sizeof(int), 1, fp);
     if((jogador->nomeJogador = (char*) malloc ((jogador->tamNomeJog)*sizeof(char))) == NULL){ 
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         fclose(fp);
         exit(1);
     }
@@ -180,7 +180,7 @@ regDados* ler_jogador(long long int byteoffset, FILE* fp){ //Faz a leitura de ex
     }
     fread(&jogador->tamNacionalidade, sizeof(int), 1, fp);
     if((jogador->nacionalidade = (char*) malloc ((jogador->tamNacionalidade)*sizeof(char))) == NULL){ 
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         fclose(fp);
         exit(1);        
     }
@@ -189,7 +189,7 @@ regDados* ler_jogador(long long int byteoffset, FILE* fp){ //Faz a leitura de ex
     }
     fread(&jogador->tamNomeClube, sizeof(int), 1, fp);
     if((jogador->nomeClube = (char*) malloc ((jogador->tamNomeClube)*sizeof(char))) == NULL){
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         fclose(fp);
         exit(1);
     }
@@ -328,7 +328,7 @@ void escreveJogador(regDados* jogador, long long int byteoffset, FILE* fp){
 bool constroi_indice(indexDados** IndiceLocal, int tamanho, long long int *ByteSets, regDados** RegistrosLocais){ //Pego os arquivos que estão na RAM e gero um indice a partir deles
     for(int i = 0; i < tamanho; i++){
         if((IndiceLocal[i] = (indexDados*) malloc (sizeof(indexDados))) == NULL){ //Aloco o cabecalho
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             exit(1);
         }
         IndiceLocal[i]->id = RegistrosLocais[i]->id;
@@ -426,7 +426,7 @@ bool preencherLista(listaDados** listaOrdenada, long long int *byteInicial, int 
         }
         fseek(fp, *byteInicial+1, SEEK_SET);
         if((listaOrdenada[(*posicao)] = (listaDados*) malloc (sizeof(listaDados))) == NULL){
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             exit(1);
         }
         fread(&listaOrdenada[*posicao]->tamanho, sizeof(int), 1 , fp); //Leitura dos campos necessários
@@ -452,7 +452,7 @@ bool ler_index(indexDados** IndiceLocal, int numero_indices, FILE* fpIndex){ //T
     for(int i = 0; i < numero_indices; i++){
         indexDados* elemento;
         if((elemento = (indexDados*) malloc (sizeof(indexDados))) == NULL){
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             return false;
         }
         fread(&elemento->id, sizeof(int), 1, fpIndex);
@@ -478,7 +478,7 @@ bool remover_arquivo_indice(indexDados** IndiceLocal, int tamanho, regDados* jog
 
 void criaJogador(regDados** jogador){ // cria, aloca e preenche um registro
     if(((*jogador) = (regDados*) malloc (sizeof(regDados))) == NULL){ //aloca o registro que sera inserido
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         return;
     }
 
@@ -506,7 +506,7 @@ void criaJogador(regDados** jogador){ // cria, aloca e preenche um registro
                 break;
             }
         if(((*jogador)->nomeJogador = (char*) malloc ((*jogador)->tamNomeJog * sizeof(char))) == NULL){ // aloca o tamanho exato
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             return;
         }
         for(int i = 0; i < (*jogador)->tamNomeJog; i++){ // preenche o nome do jogador
@@ -526,7 +526,7 @@ void criaJogador(regDados** jogador){ // cria, aloca e preenche um registro
                 break;
             }
         if(((*jogador)->nacionalidade = (char*) malloc ((*jogador)->tamNacionalidade * sizeof(char))) == NULL){ // aloca o tamanho exato
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             return;
         }
         for(int i = 0; i < (*jogador)->tamNacionalidade; i++){ // preenche a nacionalidade
@@ -546,7 +546,7 @@ void criaJogador(regDados** jogador){ // cria, aloca e preenche um registro
                 break;
             }
         if(((*jogador)->nomeClube = (char*) malloc ((*jogador)->tamNomeClube * sizeof(char))) == NULL){ // aloca o tamanho exato
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             return;
         }
         for(int i = 0; i < (*jogador)->tamNomeClube; i++){ // preenche a nacionalidade

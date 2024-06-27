@@ -10,6 +10,7 @@ Karl Cruz Altenhofen- 14585976
 #include "help.h" //Funções fornecidas pelo run.codes
 #include "busca_impressao.h"
 #include "leitura_escrita.h"
+#include "ArvB.h"
 
 struct cab{
     char status;
@@ -36,6 +37,13 @@ struct reg{
 struct dadosI{
     int id;
     long long byteoffset;
+};
+
+struct ArvBcab{
+    char status;
+    int noRaiz;
+    int proxRRN;
+    int nroChaves;
 };
 
 typedef struct listaDados{
@@ -78,19 +86,19 @@ void imprimirjogador(regDados* jogador){ //Imprime os campos: nome, nacionalidad
 
 void copiaJogador(regDados** newRegistro, regDados* jogador, int newNumero){
     if((newRegistro[newNumero] = (regDados*) malloc (sizeof(regDados))) == NULL){
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         return;
     }
     if((newRegistro[newNumero]->nomeJogador = (char*) malloc (jogador->tamNomeJog * sizeof(char))) == NULL){
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         return;
     }
     if((newRegistro[newNumero]->nacionalidade = (char*) malloc (jogador->tamNacionalidade * sizeof(char))) == NULL){
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         return;
     }
     if((newRegistro[newNumero]->nomeClube = (char*) malloc (jogador->tamNomeClube * sizeof(char))) == NULL){
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         return;
     }
 
@@ -145,7 +153,51 @@ int busca_binaria_insercao(indexDados** IndiceLocal, int idLocal, int inicio, in
     }
 }
 
-regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesquisa, long long int RegistrodeOffsets[], int function, indexDados** IndiceLocal, FILE *fp, int tamIndex, long long int *ByteSets, int tamanho_real){
+void antecipa_id(){//Leio a linha do buffer, se tiver um ID, escrevo no buffer uma busca por ID de um campo só, se não tiver ID devolvo a linha inteira para o buffer stdin
+    char comando[256];
+    char devolvido[50];
+    char teste;
+    fgets(comando, sizeof(comando), stdin);  // Ler a linha de entrada
+    int tamanho_comando = strlen(comando);
+    char comparado[4] = {0};  // Inicializa com zeros
+    int cont = 0;
+    int encontrou_id = 0;
+    // Procurar a substring "id "
+    for (int i = 0; i < tamanho_comando - 2; i++) {
+        comparado[0] = comando[i];
+        comparado[1] = comando[i + 1];
+        comparado[2] = comando[i + 2];
+        comparado[3] = '\0';  // Adicionar terminador nulo
+        if (strncmp(comparado, "id ", 3) == 0) {
+            cont = i + 3;  // Ajustar o índice para a posição após "id "
+            encontrou_id = 1;
+            break;
+        }
+    }
+    if (encontrou_id) {
+        // Extrair o número do ID
+        int j = 0;
+        while (cont < tamanho_comando && comando[cont] != ' ' && comando[cont] != '\n' && comando[cont] != '\r' && comando[cont] != EOF) {
+            devolvido[j++] = comando[cont++];
+        }
+        devolvido[j] = '\0';  // Adicionar terminador nulo
+        // Colocar a string "1 id (numero_id)" de volta no fluxo de entrada
+        char resultado[60];
+        snprintf(resultado, sizeof(resultado), "1 id %s\n", devolvido);
+        // Empurrar cada caractere de volta no fluxo de entrada
+        int length = strlen(resultado);
+        for (int i = length - 1; i >= 0; i--) {
+            ungetc(resultado[i], stdin);
+        }
+    } else {
+        // Se não encontrou "id ", empurrar o comando original de volta no fluxo de entrada
+        for (int i = tamanho_comando - 1; i >= 0; i--) {
+            ungetc(comando[i], stdin);
+        }
+    }
+}
+
+regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesquisa, long long int RegistrodeOffsets[], int function, indexDados** IndiceLocal, FILE *fp, int tamIndex, long long int *ByteSets, int tamanho_real, CabArvB * CabecalhoArvB, FILE* fpArvB){
 
     long long Bytetemporario[*(numeroResultados)]; //Vou guardar temporariamente os byteoffsets daqueles que passarem no filtro;
     for(int i = 0; i < *(numeroResultados); i++){
@@ -156,7 +208,7 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
     regDados** newRegistro; // o registro de saida
     int newNumero = 0; // numero de dados no registro de saida
     if((newRegistro = (regDados**) malloc (n * sizeof(regDados*))) == NULL){ // aloca o novo registro
-        printf("Falha no processamento do arquivo.");
+        printf("Falha no processamento do arquivo.\n");
         return NULL;
     }
     
@@ -167,7 +219,23 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
     // caso a entrada seja um array de char, cria outro array com um espaco a mais e coloca '\0' no final
     // checa a entrada contra todos os elementos no registro
     // caso passe, aloca e copia dado a dado dp registro antigo para o novo, aumentando seu numero de elementos em 1
-    if(strcmp(nomeCampo, "id") == 0 && function == 5){ //Faço busca binária pelo indice
+    if(strcmp(nomeCampo, "id") == 0 && (function == 8 || function == 9)){ //Caso seja uma busca pelo ID na função 8 ou 9, irá se buscar pelo ArvB
+        int idLocal;
+        scanf("%d", &idLocal);
+        regDados* jogador;
+        long long int bytejogador;
+        bytejogador = busca_id_ArvB(idLocal, CabecalhoArvB->noRaiz, fpArvB);
+        if(bytejogador != -1){
+            Bytetemporario[newNumero] = bytejogador;
+            jogador = ler_jogador(bytejogador, fp);
+            copiaJogador(newRegistro, jogador, 0); //Nessario para manter a modulariazação entre a função 3, 5, 8, 9
+            free(jogador->nomeJogador);
+            free(jogador->nacionalidade);
+            free(jogador->nomeClube);
+            free(jogador);
+            newNumero++;
+        }
+    }else if(strcmp(nomeCampo, "id") == 0 && function == 5){ //Faço busca binária pelo indice
         int idLocal;
         scanf("%d", &idLocal);
         regDados* jogador;
@@ -175,7 +243,7 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
         bytejogador = busca_binaria_indice(IndiceLocal, idLocal, 0, tamIndex-1);
         Bytetemporario[newNumero] = bytejogador;
         jogador = ler_jogador(bytejogador, fp);
-        copiaJogador(newRegistro, jogador, 0); //Nessario para manter a modulariazação entre a função 5 e 3
+        copiaJogador(newRegistro, jogador, 0); //Nessario para manter a modulariazação entre a função 3, 5, 8, 9
         free(jogador->nomeJogador);
         free(jogador->nacionalidade);
         free(jogador->nomeClube);
@@ -191,7 +259,7 @@ regDados** filtra(regDados** RegistroFiltrado, int* numeroResultados, int pesqui
 
     if(newNumero != 0){ //realoca o registro para o tamanho exato, se ele nao for vazio
         if((newRegistro = (regDados**) realloc (newRegistro, sizeof(regDados*) * newNumero)) == NULL){
-            printf("Falha no processamento do arquivo.");
+            printf("Falha no processamento do arquivo.\n");
             return NULL;
         }
     }
@@ -418,7 +486,12 @@ void BuscaNoVetor(char* nomeCampo, regDados** RegistroFiltrado, int* newNumero, 
 int busca_anterior(listaDados** listaOrdenada, int posicao, int tamanho){
     for(int i = 0; i < posicao; i++){
         if(listaOrdenada[i]->tamanho >= tamanho){
-            return i-1;
+            if(i-1!=-1){
+                return i-1;
+            }else{
+                return 0;
+            }
+            
         }
     }
 }
